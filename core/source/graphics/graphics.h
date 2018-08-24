@@ -723,4 +723,6 @@ char *cmzn_graphics_streamlines_colour_data_type_enum_to_string(
 
 bool cmzn_graphicspointattributes_contain_surfaces(cmzn_graphicspointattributes_id point_attributes);
 
+struct GT_object *cmzn_graphics_get_exportable_threejs_graphics(struct cmzn_graphics *graphics, double current_time);
+
 #endif

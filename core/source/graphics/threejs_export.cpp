@@ -10,6 +10,7 @@
 * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "general/debug.h"
+#include "graphics/graphics.h"
 #include "opencmiss/zinc/material.h"
 #include "graphics/threejs_export.hpp"
 #include "graphics/glyph.hpp"
@@ -646,12 +647,159 @@ void Threejs_export::writeUVsBuffer(GLfloat *texture_buffer, unsigned int values
 	}
 }
 
-/* Export surfaces graphics into a json format recognisable by threejs. */
-int Threejs_export::exportGraphicsObject(struct GT_object *object, int time_step)
+int Threejs_export::exportVertexBuffer(struct GT_object *object, int time_step)
 {
-	if (object)
+	GLfloat *position_vertex_buffer = NULL;
+	unsigned int position_values_per_vertex, position_vertex_count;
+	if (object->vertex_array->get_float_vertex_buffer(
+		GRAPHICS_VERTEX_ARRAY_ATTRIBUTE_TYPE_POSITION,
+		&position_vertex_buffer, &position_values_per_vertex,
+		&position_vertex_count))
+	{
+		if (time_step == 0)
+		{
+			writeVertexBuffer("vertices",
+				position_vertex_buffer, position_values_per_vertex,
+				position_vertex_count);
+		}
+		if (number_of_time_steps > 1)
+		{
+			if (morphVertices)
+			{
+				morphVerticesExported = true;
+				writeMorphVertexBuffer("vertices", &verticesMorphString,
+					position_vertex_buffer, position_values_per_vertex,
+					position_vertex_count, time_step);
+			}
+		}
+	}
+
+	return position_vertex_count;
+}
+
+void Threejs_export::exportColourBuffer(struct GT_object *object, int time_step, int *typebitmask)
+{
+	if (mode == CMZN_STREAMINFORMATION_SCENE_IO_DATA_TYPE_COLOUR)
+	{
+		/* this case export the colour */
+		unsigned int colour_values_per_vertex, colour_vertex_count;
+		GLfloat *colour_buffer = (GLfloat *)NULL;
+		if (Graphics_object_create_colour_buffer_from_data(object,
+			&colour_buffer,
+			&colour_values_per_vertex, &colour_vertex_count))
+		{
+			int *hex_colours = new int[colour_vertex_count];
+			GLfloat *colours = colour_buffer;
+			for (unsigned int i = 0; i < colour_vertex_count; i++)
+			{
+				hex_colours[i] = rgb_to_hex(colours[0], colours[1], colours[2]);
+				colours += colour_values_per_vertex;
+			}
+			if (time_step == 0)
+			{
+				*typebitmask |= THREEJS_TYPE_VERTEX_COLOR;
+				writeIntegerBuffer("colors",
+					hex_colours, 1, colour_vertex_count);
+			}
+			if (number_of_time_steps > 1)
+			{
+				if (morphColours)
+				{
+					morphColoursExported = true;
+					writeMorphIntegerBuffer("colors", &colorsMorphString,
+						hex_colours, 1, colour_vertex_count, time_step);
+				}
+			}
+			delete[] hex_colours;
+			if (colour_buffer)
+			{
+				DEALLOCATE(colour_buffer);
+			}
+		}
+	}
+	else if (mode == CMZN_STREAMINFORMATION_SCENE_IO_DATA_TYPE_PER_VERTEX_VALUE ||
+			CMZN_STREAMINFORMATION_SCENE_IO_DATA_TYPE_PER_FACE_VALUE)
+	{
+		/* this case export the field data directly */
+		GLfloat *data_buffer = NULL;
+		unsigned int data_values_per_vertex, data_vertex_count;
+		if (object->vertex_array->get_float_vertex_buffer(
+			GRAPHICS_VERTEX_ARRAY_ATTRIBUTE_TYPE_DATA,
+			&data_buffer, &data_values_per_vertex, &data_vertex_count))
+		{
+			if (time_step == 0)
+			{
+				if (mode == CMZN_STREAMINFORMATION_SCENE_IO_DATA_TYPE_PER_FACE_VALUE)
+				{
+					*typebitmask |= THREEJS_TYPE_FACE_COLOR;
+				}
+				else
+				{
+					*typebitmask |= THREEJS_TYPE_VERTEX_COLOR;
+				}
+				writeSpecialDataBuffer(object, data_buffer, data_values_per_vertex,
+					data_vertex_count);
+			}
+		}
+	}
+}
+
+void Threejs_export::exportNormalBuffer(struct GT_object *object, int time_step, int *typebitmask)
+{
+	GLfloat *normal_buffer = NULL;
+	unsigned int normal_values_per_vertex, normal_vertex_count;
+	if (object->vertex_array->get_float_vertex_buffer(
+		GRAPHICS_VERTEX_ARRAY_ATTRIBUTE_TYPE_NORMAL,
+		&normal_buffer, &normal_values_per_vertex, &normal_vertex_count)
+		&& (3 == normal_values_per_vertex))
+	{
+		if (time_step == 0)
+		{
+			*typebitmask |= THREEJS_TYPE_VERTEX_NORMAL;
+			writeVertexBuffer("normals",
+				normal_buffer, normal_values_per_vertex,
+				normal_vertex_count);
+		}
+		if (number_of_time_steps > 1)
+		{
+			if (morphNormals)
+			{
+				morphNormalsExported = true;
+				writeMorphVertexBuffer("normals", &normalMorphString,
+					normal_buffer, normal_values_per_vertex,
+					normal_vertex_count, time_step);
+			}
+		}
+	}
+}
+
+void Threejs_export::exportUVsBuffer(struct GT_object *object, int time_step, int *typebitmask)
+{
+	GLfloat *texture_coordinate0_buffer = NULL;
+	unsigned int texture_coordinate0_values_per_vertex,
+	texture_coordinate0_vertex_count;
+	if (object->vertex_array->get_float_vertex_buffer(
+		GRAPHICS_VERTEX_ARRAY_ATTRIBUTE_TYPE_TEXTURE_COORDINATE_ZERO,
+		&texture_coordinate0_buffer, &texture_coordinate0_values_per_vertex,
+		&texture_coordinate0_vertex_count))
+	{
+		if (time_step == 0)
+		{
+			*typebitmask |= THREEJS_TYPE_VERTEX_TEX_COORD;
+			writeUVsBuffer(texture_coordinate0_buffer, texture_coordinate0_values_per_vertex,
+				texture_coordinate0_vertex_count);
+		}
+	}
+}
+
+/* Export surfaces graphics into a json format recognisable by threejs. */
+int Threejs_export::exportGraphics(cmzn_graphics *graphics, int time_step, double current_time)
+{
+	GT_object *object = 0;
+	if (graphics  && (0 != (object = cmzn_graphics_get_graphics_object(graphics))))
 	{
 		int typebitmask = 0;
+		int position_vertex_count = 0;
 		int buffer_binding = object->buffer_binding;
 		object->buffer_binding = 1;
 
@@ -660,140 +808,13 @@ int Threejs_export::exportGraphicsObject(struct GT_object *object, int time_step
 		case g_SURFACE_VERTEX_BUFFERS:
 		{
 			/* export the vertices */
-			GLfloat *position_vertex_buffer = NULL;
-			unsigned int position_values_per_vertex, position_vertex_count;
-			if (object->vertex_array->get_float_vertex_buffer(
-				GRAPHICS_VERTEX_ARRAY_ATTRIBUTE_TYPE_POSITION,
-				&position_vertex_buffer, &position_values_per_vertex,
-				&position_vertex_count))
-			{
-				if (time_step == 0)
-				{
-					writeVertexBuffer("vertices",
-						position_vertex_buffer, position_values_per_vertex,
-						position_vertex_count);
-				}
-				if (number_of_time_steps > 1)
-				{
-					if (morphVertices)
-					{
-						morphVerticesExported = true;
-						writeMorphVertexBuffer("vertices", &verticesMorphString,
-							position_vertex_buffer, position_values_per_vertex,
-							position_vertex_count, time_step);
-					}
-				}
-			}
-
+			position_vertex_count = exportVertexBuffer(object, time_step);
 			/* export the colour buffer */
-			if (mode == CMZN_STREAMINFORMATION_SCENE_IO_DATA_TYPE_COLOUR)
-			{
-				/* this case export the colour */
-				unsigned int colour_values_per_vertex, colour_vertex_count;
-				GLfloat *colour_buffer = (GLfloat *)NULL;
-				if (Graphics_object_create_colour_buffer_from_data(object,
-					&colour_buffer,
-					&colour_values_per_vertex, &colour_vertex_count)
-					&& (colour_vertex_count == position_vertex_count))
-				{
-					int *hex_colours = new int[colour_vertex_count];
-					GLfloat *colours = colour_buffer;
-					for (unsigned int i = 0; i < colour_vertex_count; i++)
-					{
-						hex_colours[i] = rgb_to_hex(colours[0], colours[1], colours[2]);
-						colours += colour_values_per_vertex;
-					}
-					if (time_step == 0)
-					{
-						typebitmask |= THREEJS_TYPE_VERTEX_COLOR;
-						writeIntegerBuffer("colors",
-							hex_colours, 1, colour_vertex_count);
-					}
-					if (number_of_time_steps > 1)
-					{
-						if (morphColours)
-						{
-							morphColoursExported = true;
-							writeMorphIntegerBuffer("colors", &colorsMorphString,
-								hex_colours, 1, colour_vertex_count, time_step);
-						}
-					}
-					delete[] hex_colours;
-					if (colour_buffer)
-					{
-						DEALLOCATE(colour_buffer);
-					}
-				}
-			}
-			else if (mode == CMZN_STREAMINFORMATION_SCENE_IO_DATA_TYPE_PER_VERTEX_VALUE ||
-					CMZN_STREAMINFORMATION_SCENE_IO_DATA_TYPE_PER_FACE_VALUE)
-			{
-				/* this case export the field data directly */
-				GLfloat *data_buffer = NULL;
-				unsigned int data_values_per_vertex, data_vertex_count;
-				if (object->vertex_array->get_float_vertex_buffer(
-					GRAPHICS_VERTEX_ARRAY_ATTRIBUTE_TYPE_DATA,
-					&data_buffer, &data_values_per_vertex, &data_vertex_count))
-				{
-					if (time_step == 0)
-					{
-						if (mode == CMZN_STREAMINFORMATION_SCENE_IO_DATA_TYPE_PER_FACE_VALUE)
-						{
-							typebitmask |= THREEJS_TYPE_FACE_COLOR;
-						}
-						else
-						{
-							typebitmask |= THREEJS_TYPE_VERTEX_COLOR;
-						}
-						writeSpecialDataBuffer(object, data_buffer, data_values_per_vertex,
-							data_vertex_count);
-					}
-				}
-			}
-
+			exportColourBuffer(object, time_step, &typebitmask);
 			/* export the normal buffer */
-			GLfloat *normal_buffer = NULL;
-			unsigned int normal_values_per_vertex, normal_vertex_count;
-			if (object->vertex_array->get_float_vertex_buffer(
-				GRAPHICS_VERTEX_ARRAY_ATTRIBUTE_TYPE_NORMAL,
-				&normal_buffer, &normal_values_per_vertex, &normal_vertex_count)
-				&& (3 == normal_values_per_vertex))
-			{
-				if (time_step == 0)
-				{
-					typebitmask |= THREEJS_TYPE_VERTEX_NORMAL;
-					writeVertexBuffer("normals",
-						normal_buffer, normal_values_per_vertex,
-						normal_vertex_count);
-				}
-				if (number_of_time_steps > 1)
-				{
-					if (morphNormals)
-					{
-						morphNormalsExported = true;
-						writeMorphVertexBuffer("normals", &normalMorphString,
-							normal_buffer, normal_values_per_vertex,
-							normal_vertex_count, time_step);
-					}
-				}
-			}
-
+			exportNormalBuffer(object, time_step, &typebitmask);
 			/* export the texture coordinates buffer */
-			GLfloat *texture_coordinate0_buffer = NULL;
-			unsigned int texture_coordinate0_values_per_vertex,
-			texture_coordinate0_vertex_count;
-			if (object->vertex_array->get_float_vertex_buffer(
-				GRAPHICS_VERTEX_ARRAY_ATTRIBUTE_TYPE_TEXTURE_COORDINATE_ZERO,
-				&texture_coordinate0_buffer, &texture_coordinate0_values_per_vertex,
-				&texture_coordinate0_vertex_count))
-			{
-				if (time_step == 0)
-				{
-					typebitmask |= THREEJS_TYPE_VERTEX_TEX_COORD;
-					writeUVsBuffer(texture_coordinate0_buffer, texture_coordinate0_values_per_vertex,
-						texture_coordinate0_vertex_count);
-				}
-			}
+			exportUVsBuffer(object, time_step, &typebitmask);
 			if (time_step == 0)
 			{
 				writeIndexBuffer(object, typebitmask, position_vertex_count, 0);
@@ -1084,9 +1105,10 @@ void Threejs_export_glyph::exportGlyphsTransformation(struct GT_object *object, 
 	}
 }
 
-int Threejs_export_glyph::exportGraphicsObject(struct GT_object *object, int time_step)
+int Threejs_export_glyph::exportGraphics(cmzn_graphics *graphics, int time_step, double current_time)
 {
-	if (object)
+	GT_object *object = 0;
+	if (graphics  && (0 != (object = cmzn_graphics_get_graphics_object(graphics))))
 	{
 		int buffer_binding = object->buffer_binding;
 		object->buffer_binding = 1;
@@ -1145,4 +1167,146 @@ std::string *Threejs_export_glyph::getGlyphTransformationExportString()
 	glyphTransformationString = Json::StyledWriter().write(root);
 
 	return &glyphTransformationString;
+}
+
+void Threejs_export_line::writeVerticesCountBuffer()
+{
+	if (count_json.size() > 0)
+	{
+		verticesCountString += "\t\"vertices_count\" : ";
+		verticesCountString += Json::StyledWriter().write(count_json);
+		verticesCountString += "\n\n";
+	}
+}
+
+void Threejs_export_line::exportVerticesCount(struct GT_object *object)
+{
+	int *value_buffer = 0;
+	unsigned int values_per_vertex = 0, vertex_count = 0;
+	object->vertex_array->get_integer_vertex_buffer(
+		GRAPHICS_VERTEX_ARRAY_ATTRIBUTE_TYPE_ELEMENT_INDEX_COUNT, &value_buffer, &values_per_vertex,
+		&vertex_count);
+	for (unsigned int i = 0; i < vertex_count; i++)
+	{
+		count_json.append(value_buffer[i]);
+	}
+	writeVerticesCountBuffer();
+}
+
+void Threejs_export_line::writeRadialSegmentsBuffer()
+{
+	if (radial_segments_json.size() > 0)
+	{
+		radialSegmentsString += "\t\"radial_segments\" : ";
+		radialSegmentsString += Json::StyledWriter().write(radial_segments_json);
+		radialSegmentsString += ",\n\n";
+	}
+}
+
+void Threejs_export_line::exportRadialSegments(struct GT_object *object)
+{
+	int *value_buffer = 0;
+	unsigned int values_per_vertex = 0, vertex_count = 0;
+	object->vertex_array->get_integer_vertex_buffer(
+			GRAPHICS_VERTEX_ARRAY_ATTRIBUTE_TYPE_NUMBER_OF_XI1, &value_buffer, &values_per_vertex,
+		&vertex_count);
+	for (unsigned int i = 0; i < vertex_count; i++)
+	{
+		radial_segments_json.append(value_buffer[i]);
+	}
+	writeRadialSegmentsBuffer();
+}
+
+void Threejs_export_line::writeRadiusBuffer()
+{
+	if (radii_json.size() > 0)
+	{
+		radiiCountString += "\t\"Radius\" : ";
+		radiiCountString += Json::StyledWriter().write(radii_json);
+		radiiCountString += ",\n\n";
+	}
+}
+
+void Threejs_export_line::exportRadius(struct GT_object *object)
+{
+	int *value_buffer = 0;
+	unsigned int values_per_vertex = 0, vertex_count = 0;
+	object->vertex_array->get_integer_vertex_buffer(
+		GRAPHICS_VERTEX_ARRAY_ATTRIBUTE_TYPE_RADIUS, &value_buffer, &values_per_vertex,
+		&vertex_count);
+	for (unsigned int i = 0; i < vertex_count; i++)
+	{
+		for (int k = 0; k < values_per_vertex; k++)
+		{
+			radii_json.append(value_buffer[i*3 + k]);
+		}
+	}
+	writeRadiusBuffer();
+}
+
+void Threejs_export_line::exportLines(cmzn_graphics *graphics, int time_step)
+{
+	GT_object *object = 0;
+	if (graphics && (0 != (object = cmzn_graphics_get_graphics_object(graphics))))
+	{
+		int typebitmask = 0;
+		int buffer_binding = object->buffer_binding;
+		object->buffer_binding = 1;
+		exportVertexBuffer(object, time_step);
+		/* export the colour buffer */
+		exportColourBuffer(object, time_step, &typebitmask);
+		exportVerticesCount(object);
+		object->buffer_binding = buffer_binding;
+	}
+}
+
+void Threejs_export_line::exportCylinders(cmzn_graphics *graphics, int time_step, double current_time)
+{
+	GT_object *object = 0;
+	if (graphics && (0 != (object = cmzn_graphics_get_exportable_threejs_graphics(graphics, current_time))))
+	{
+		int typebitmask = 0;
+		int buffer_binding = object->buffer_binding;
+		object->buffer_binding = 1;
+		exportVertexBuffer(object, time_step);
+		/* export the colour buffer */
+		exportColourBuffer(object, time_step, &typebitmask);
+		exportRadius(object);
+		exportRadialSegments(object);
+		exportVerticesCount(object);
+		object->buffer_binding = buffer_binding;
+		DEACCESS(GT_object)(&object);
+	}
+}
+
+int Threejs_export_line::exportGraphics(cmzn_graphics *graphics, int time_step, double current_time)
+{
+	GT_object *object = 0;
+	if (graphics && (cmzn_graphics_get_type(graphics) == CMZN_GRAPHICS_TYPE_LINES) &&
+		(0 != (object = cmzn_graphics_get_graphics_object(graphics))))
+	{
+		if (CMZN_GRAPHICSLINEATTRIBUTES_SHAPE_TYPE_LINE == graphics->line_shape)
+		{
+			exportLines(graphics, time_step);
+		}
+		else
+		{
+			exportCylinders(graphics, time_step, current_time);
+		}
+
+		return 1;
+	}
+	return 0;
+}
+
+int Threejs_export_line::endExport()
+{
+	outputString += verticesMorphString;
+	outputString += colorsMorphString;
+	outputString += radiiCountString;
+	outputString += radialSegmentsString;
+	outputString += verticesCountString;
+
+	outputString += "}\n";
+	return 1;
 }

@@ -549,5 +549,8 @@ int Scene_get_number_of_graphics_with_surface_vertices_in_tree(cmzn_scene_id sce
 int Scene_get_number_of_web_compatible_glyph_in_tree(cmzn_scene_id scene,
 	cmzn_scenefilter_id scenefilter);
 
+int Scene_get_number_of_graphics_with_line_in_tree(cmzn_scene_id scene,
+	cmzn_scenefilter_id scenefilter);
+
 #endif /* !defined (SCENE_H) */
 

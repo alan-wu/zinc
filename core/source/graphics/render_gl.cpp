@@ -659,7 +659,6 @@ public:
 			Threejs_export_glyph *glyph_export = dynamic_cast<Threejs_export_glyph*>(export_iter->second);
 			if (glyph_export)
 			{
-				graphics_json["Type"]="Glyph";
 				i++;
 				if (numberOfResources > i)
 				{
@@ -674,10 +673,7 @@ public:
 					glyph_export->setGlyphGeometriesURLName(temp);
 				}
 			}
-			else
-			{
-				graphics_json["Type"]="Surfaces";
-			}
+			graphics_json["Type"]= export_iter->second->getTypeString();
 			i++;
 			root.append(graphics_json);
 		}
@@ -784,8 +780,6 @@ public:
 	int Graphics_export(cmzn_graphics *graphics)
 	{
 		int return_code = 1;
-		GT_object *graphics_object = cmzn_graphics_get_graphics_object(
-			graphics);
 		Threejs_export_class *threejs_export = 0;
 		if (number_of_time_steps == 0 || current_time_frame == 0)
 		{
@@ -839,7 +833,7 @@ public:
 				threejs_export = dynamic_cast<Threejs_export_class*>(iter->second);
 			}
 		}
-		return_code = threejs_export->exportGraphicsObject(graphics_object, current_time_frame);
+		return_code = threejs_export->exportGraphics(graphics, current_time_frame, (double)this->time);
 		if ((number_of_time_steps == 0) || (number_of_time_steps == 1) ||
 			(number_of_time_steps - 1 == current_time_frame))
 		{
@@ -855,7 +849,10 @@ public:
 		int return_code = 1;
 		GT_object *graphics_object = cmzn_graphics_get_graphics_object(
 			graphics);
-		if (graphics_object &&
+		if (cmzn_graphics_get_type(graphics) == CMZN_GRAPHICS_TYPE_LINES) {
+			return_code = Graphics_export<Threejs_export_line>(graphics);
+		}
+		else if (graphics_object &&
 			(GT_object_get_type(graphics_object) == g_SURFACE_VERTEX_BUFFERS))
 		{
 			return_code = Graphics_export<Threejs_export>(graphics);

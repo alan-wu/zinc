@@ -270,4 +270,24 @@ int Cmiss_graphic_point_graphics_to_vertex_buffer(
 	const FE_value *base_size, const FE_value *offset, const FE_value *scale_factors,
 	struct Graphics_vertex_array *array);
 
+/***************************************************************************//**
+ * Fills the array with ZincJS compatible coordinates from the <coordinate_field>
+ * and the radius for the 1-D finite <element> using a grid of points.
+ * Notes:
+ * - the coordinate field is assumed to be rectangular cartesian.
+ * @param field_cache  cmzn_fieldcache for evaluating fields. Time is expected
+ * to be set in the field_cache if needed.
+ */
+int FE_element_add_exportable_threejs_cylinder_to_vertex_array(struct FE_element *element,
+		cmzn_fieldcache_id field_cache,
+		struct Graphics_vertex_array *array, cmzn_mesh_id line_mesh,
+		struct Computed_field *coordinate_field,
+		struct Computed_field *data_field,
+		const FE_value *base_size,
+		const FE_value *scale_factors,
+		cmzn_field_id orientation_scale_field,
+		int number_of_segments_along, int number_of_segments_around,
+		struct Computed_field *texture_coordinate_field,
+		struct FE_element *top_level_element);
+
 #endif /* !defined (FINITE_ELEMENT_TO_GRAPHICAL_OBJECT_H) */

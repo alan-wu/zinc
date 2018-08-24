@@ -1067,6 +1067,97 @@ int FE_element_add_line_to_vertex_array(struct FE_element *element,
 	return (return_code);
 } /* FE_element_add_line_to_vertex_buffer_set */
 
+int FE_element_add_exportable_threejs_cylinder_to_vertex_array(struct FE_element *element,
+		cmzn_fieldcache_id field_cache,
+		struct Graphics_vertex_array *array, cmzn_mesh_id line_mesh,
+		struct Computed_field *coordinate_field,
+		struct Computed_field *data_field,
+		const FE_value *base_size,
+		const FE_value *scale_factors,
+		cmzn_field_id orientation_scale_field,
+		int number_of_segments_along, int number_of_segments_around,
+		struct Computed_field *texture_coordinate_field,
+		struct FE_element *top_level_element)
+{
+	FE_value distance, xi;
+	int return_code;
+	unsigned int i, vertex_start, number_of_vertices;
+	GLfloat *floatData = 0;
+	/* it is almost the same as line but this is with cylinder */
+	return_code = FE_element_add_line_to_vertex_array(element, field_cache, array,
+		coordinate_field, 0, data_field,
+		texture_coordinate_field,
+		number_of_segments_along, top_level_element);
+	int coordinate_dimension = Computed_field_get_number_of_components(coordinate_field);
+	if (return_code && element && field_cache && line_mesh && (1 == get_FE_element_dimension(element)) &&
+		(0 < number_of_segments_along) && (1 < number_of_segments_around) &&
+		coordinate_field && (3 >= coordinate_dimension) &&
+		(0 != base_size) && (0 != scale_factors) &&
+		((!orientation_scale_field) ||
+			(1 == Computed_field_get_number_of_components(orientation_scale_field))))
+	{
+		return_code = 1;
+		FE_value coordinates[3], derivative_xi[3], dS_dxi, xi, diameter_derivative, diameter_value, radius[3];
+		coordinates[1]=0.0;
+		coordinates[2]=0.0;
+		derivative_xi[1]=0.0;
+		derivative_xi[2]=0.0;
+		cmzn_differentialoperator_id d_dxi = cmzn_mesh_get_chart_differentialoperator(line_mesh, /*order*/1, 1);
+		FE_value constant_radius = 0.5*base_size[0];
+		FE_value scale_factor = 0.5*scale_factors[0];
+		for (i=0;(i<=number_of_segments_along) && return_code;i++)
+		{
+			xi=(ZnReal)i/(ZnReal)number_of_segments_along;
+			/* evaluate the fields */
+			if ((CMZN_OK == cmzn_fieldcache_set_mesh_location_with_parent(
+					field_cache, element, /*dimension*/1, &xi, top_level_element)) &&
+				(CMZN_OK == cmzn_field_evaluate_derivative(coordinate_field,
+					d_dxi, field_cache, coordinate_dimension, derivative_xi)) &&
+				(CMZN_OK == cmzn_field_evaluate_real(coordinate_field, field_cache,
+					coordinate_dimension, coordinates))&&
+				((!orientation_scale_field) || (
+					(CMZN_OK == cmzn_field_evaluate_derivative(orientation_scale_field, d_dxi, field_cache, 1, &diameter_derivative)) &&
+					(CMZN_OK == cmzn_field_evaluate_real(orientation_scale_field, field_cache, 1, &diameter_value)))))
+			{
+				/* normalize the line direction (derivative) */
+				/* keep dS/dxi in the radius_array for converting derivatives later */
+				dS_dxi = sqrt(derivative_xi[0]*derivative_xi[0]+
+					derivative_xi[1]*derivative_xi[1]+
+					derivative_xi[2]*derivative_xi[2]);
+				radius[2] = dS_dxi;
+				/* store the radius and derivative in the radius array */
+				if (orientation_scale_field)
+				{
+					radius[0] = constant_radius + scale_factor*diameter_value;
+					radius[1] = diameter_derivative*scale_factor;
+				}
+				else
+				{
+					radius[0] = constant_radius;
+					radius[1] = 0.0;
+				}
+				GLfloat floatField[3];
+				CAST_TO_OTHER(floatField,radius,GLfloat,3);
+				array->add_float_attribute(GRAPHICS_VERTEX_ARRAY_ATTRIBUTE_TYPE_RADIUS,
+					3, 1, floatField);
+			}
+		}
+		unsigned int number_of_xi1 = number_of_segments_around;
+		array->add_unsigned_integer_attribute(
+			GRAPHICS_VERTEX_ARRAY_ATTRIBUTE_TYPE_NUMBER_OF_XI1,
+			1, 1, &number_of_xi1);
+	}
+	else
+	{
+		display_message(ERROR_MESSAGE,
+			"FE_element_add_line_to_vertex_buffer_set.  "
+			"Invalid argument(s)");
+		return_code = 0;
+	}
+
+	return (return_code);
+} /* FE_element_add_line_to_vertex_buffer_set */
+
 int FE_element_add_cylinder_to_vertex_array(struct FE_element *element,
 	cmzn_fieldcache_id field_cache,
 	struct Graphics_vertex_array *array, cmzn_mesh_id line_mesh,
